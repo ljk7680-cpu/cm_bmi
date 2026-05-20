@@ -1,0 +1,1171 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>스마트 미출하 & 납기준수율 분석 시스템</title>
+    <!-- Tailwind CSS for modern responsive utility styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts for sophisticated aesthetics -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Noto+Sans+KR:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+    <!-- FontAwesome for high-quality dashboard system icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- SheetJS (XLSX) for high-performance in-browser Excel parsing -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+    <style>
+        body {
+            font-family: 'Inter', 'Noto Sans KR', sans-serif;
+            background-color: #0b0f19;
+        }
+        /* Custom scrollbar styling for slick enterprise tables */
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #111827;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #374151;
+            border-radius: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #10b981;
+        }
+        /* Active day calendar highlighters */
+        .calendar-day-active {
+            box-shadow: 0 0 0 2px #10b981 inset;
+        }
+    </style>
+</head>
+<body class="min-h-screen text-slate-100 flex flex-col justify-between antialiased">
+
+    <!-- 메인 네비게이션 헤더 -->
+    <header class="w-full bg-slate-900/90 border-b border-slate-800 py-4 px-6 sticky top-0 z-45 backdrop-blur">
+        <div class="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
+            <div class="flex items-center space-x-3">
+                <div class="w-10 h-10 bg-gradient-to-tr from-emerald-500 to-teal-600 rounded-xl flex items-center justify-center shadow-lg shadow-emerald-500/10">
+                    <i class="fa-regular fa-calendar-check text-lg text-white"></i>
+                </div>
+                <div>
+                    <h1 class="text-lg font-black tracking-tight text-white leading-none">ORDER DELIVERY & OTD</h1>
+                    <span class="text-[10px] text-emerald-400 font-bold tracking-wider uppercase">미출하 스케줄 캘린더 및 납기지연 추적기</span>
+                </div>
+            </div>
+            
+            <div class="flex items-center gap-3">
+                <!-- 샘플 다운로드 및 분석 초기 가이드 버튼군 -->
+                <button onclick="loadSampleCSVData()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-xs font-semibold rounded-xl border border-slate-700 transition flex items-center gap-2">
+                    <i class="fa-solid fa-database text-emerald-400"></i> 주문서 샘플로 채우기
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- 메인 대시보드 영역 -->
+    <main class="flex-grow max-w-7xl w-full mx-auto px-4 py-6 md:py-8 space-y-6">
+        
+        <!-- 탑 레이아웃: 업로더 및 분석 날짜 설정 -->
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
+            
+            <!-- 드래그앤드롭 파일 업로더 (lg:5) -->
+            <div class="lg:col-span-5 bg-slate-900 border border-slate-800 rounded-3xl p-5 shadow-xl flex flex-col justify-between">
+                <div>
+                    <h2 class="text-sm font-bold text-slate-200 mb-1 flex items-center gap-2">
+                        <i class="fa-solid fa-file-csv text-emerald-400"></i> 주문서 CSV/XLS 파일 가져오기
+                    </h2>
+                    <p class="text-xs text-slate-500 mb-3">회사의 실제 발주/주문서 내역을 로드합니다.</p>
+
+                    <div id="dropzone" class="border-2 border-dashed border-slate-700 hover:border-emerald-500/70 bg-slate-950/40 rounded-2xl p-6 text-center cursor-pointer transition-all flex flex-col items-center justify-center min-h-[140px]">
+                        <input type="file" id="file-input" accept=".xlsx, .xls, .csv" class="hidden" onchange="handleFileSelect(event)">
+                        <div class="w-11 h-11 bg-slate-900 border border-slate-800 rounded-full flex items-center justify-center mb-2 text-emerald-400">
+                            <i class="fa-solid fa-cloud-arrow-up text-lg"></i>
+                        </div>
+                        <p class="text-xs font-semibold text-slate-300">엑셀(.xlsx) 또는 CSV 파일을 선택하세요</p>
+                    </div>
+
+                    <!-- 파일 정보 표시 패널 (파일 로드 시 노출) -->
+                    <div id="file-info-bar" class="hidden mt-3 p-3 bg-slate-950/80 border border-slate-800 rounded-xl flex items-center justify-between text-[11px]">
+                        <div class="flex items-center gap-2 overflow-hidden">
+                            <i class="fa-solid fa-circle-check text-emerald-400 flex-shrink-0"></i>
+                            <span id="loaded-file-name" class="font-semibold text-slate-300 truncate">data_file.xlsx</span>
+                            <span id="loaded-file-rows" class="text-slate-500 flex-shrink-0">(0건)</span>
+                        </div>
+                        <button onclick="resetFile()" class="text-rose-400 hover:text-rose-300 transition ml-2 flex-shrink-0">초기화 <i class="fa-solid fa-rotate-left"></i></button>
+                    </div>
+                </div>
+
+                <!-- 데이터 열 강제 자동 매퍼 알림 -->
+                <div class="mt-4 p-3 bg-slate-950 rounded-xl border border-slate-850 text-[11px] text-slate-400 leading-relaxed">
+                    <i class="fa-solid fa-circle-info text-blue-400 mr-1"></i>
+                    업로드 시 <span class="text-slate-200 font-semibold">주문번호, 품목명, 거래처명, 수량, 잔량, 납기일, 출하일</span> 헤더를 자동으로 감지 및 파싱합니다.
+                </div>
+            </div>
+
+            <!-- 우측 지정 분석 기준일 제어판 (lg:7) -->
+            <div class="lg:col-span-7 bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl flex flex-col justify-between">
+                <div>
+                    <div class="flex justify-between items-start mb-3">
+                        <div>
+                            <h2 class="text-base font-bold text-slate-200 flex items-center gap-2">
+                                <i class="fa-solid fa-clock-rotate-left text-emerald-400"></i> 미출하 기준 일자 지정
+                            </h2>
+                            <p class="text-xs text-slate-500 mt-0.5">선택한 가상의 '오늘' 날짜를 기준으로 지연 및 미출하 잔량을 다시 필터링합니다.</p>
+                        </div>
+                        <span class="text-[10px] bg-emerald-500/10 text-emerald-400 font-bold px-2 py-1 rounded border border-emerald-500/10">실시간 연동</span>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 my-4">
+                        <div class="bg-slate-950 p-4 rounded-xl border border-slate-850 flex flex-col justify-between">
+                            <span class="text-[11px] text-slate-400 font-bold mb-2 block">📅 지정 분석 기준일 (가상 현재일)</span>
+                            <input type="date" id="target-criteria-date" onchange="onCriteriaDateChange()" class="w-full bg-slate-900 border border-slate-800 focus:border-emerald-500 text-slate-200 rounded-lg px-3 py-2 text-xs outline-none transition">
+                            <span class="text-[10px] text-slate-500 mt-2">이 일자보다 납기일이 이전인 미출품은 <b>'납기 지연'</b>으로 판정됩니다.</span>
+                        </div>
+
+                        <div class="bg-slate-950 p-4 rounded-xl border border-slate-850 flex flex-col justify-between">
+                            <span class="text-[11px] text-slate-400 font-bold mb-1 block">⚡ 요약 대시보드 (기준일 시점)</span>
+                            <div class="grid grid-cols-2 gap-2 mt-2 text-center">
+                                <div class="bg-slate-900/60 p-2 rounded border border-slate-800">
+                                    <span class="text-[9px] text-slate-500 block">총 미출하 물량</span>
+                                    <span id="quick-unfulfilled-qty" class="text-sm font-black text-amber-400">0 EA</span>
+                                </div>
+                                <div class="bg-slate-900/60 p-2 rounded border border-slate-800">
+                                    <span class="text-[9px] text-rose-500 block">납기 지연 중</span>
+                                    <span id="quick-overdue-count" class="text-sm font-black text-rose-500">0 건</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex flex-col md:flex-row gap-3">
+                    <button onclick="runOTDProcessing()" class="flex-grow bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-bold py-3 px-4 rounded-xl shadow-lg shadow-emerald-500/10 transition transform active:scale-95 text-xs flex items-center justify-center gap-2">
+                        <i class="fa-solid fa-play"></i> 캘린더 및 미출하 현황 분석 실행
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 메인 분석 인터랙티브 영역 (데이터 분석 가동 전까지 숨김) -->
+        <div id="dashboard-container" class="hidden space-y-6">
+            
+            <!-- 통계 가시화 뱃지 그룹 -->
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div class="bg-slate-900 border border-slate-800 p-4 rounded-2xl flex items-center justify-between">
+                    <div>
+                        <span class="text-[10px] text-slate-500 font-bold uppercase block">분석 대상 총 주문</span>
+                        <span id="stat-total-orders" class="text-xl font-extrabold text-white">0건</span>
+                    </div>
+                    <i class="fa-solid fa-folder text-slate-600 text-lg"></i>
+                </div>
+                <div class="bg-slate-900 border border-slate-800 p-4 rounded-2xl flex items-center justify-between">
+                    <div>
+                        <span class="text-[10px] text-emerald-400 font-bold uppercase block">출하 완료 건수</span>
+                        <span id="stat-completed-orders" class="text-xl font-extrabold text-emerald-400">0건</span>
+                    </div>
+                    <i class="fa-solid fa-circle-check text-emerald-500/40 text-lg"></i>
+                </div>
+                <div class="bg-slate-900 border border-slate-800 p-4 rounded-2xl flex items-center justify-between">
+                    <div>
+                        <span class="text-[10px] text-amber-500 font-bold uppercase block">미출하 주문 잔량</span>
+                        <span id="stat-unfulfilled-orders" class="text-xl font-extrabold text-amber-400">0건</span>
+                    </div>
+                    <i class="fa-solid fa-clock text-amber-500/40 text-lg"></i>
+                </div>
+                <div class="bg-slate-900 border border-slate-800 p-4 rounded-2xl flex items-center justify-between">
+                    <div>
+                        <span class="text-[10px] text-rose-500 font-bold uppercase block">납기 지연 건수</span>
+                        <span id="stat-overdue-orders" class="text-xl font-extrabold text-rose-500">0건</span>
+                    </div>
+                    <i class="fa-solid fa-triangle-exclamation text-rose-500/40 text-lg"></i>
+                </div>
+            </div>
+
+            <!-- 중단 레이아웃: 캘린더 및 실시간 클릭한 일자 상세 뷰어 구성 -->
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+                
+                <!-- 좌측: 미출하 일정 캘린더 (lg:7) -->
+                <div class="lg:col-span-7 bg-slate-900 border border-slate-800 rounded-3xl p-5 shadow-xl space-y-4">
+                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div class="flex items-center gap-2">
+                            <i class="fa-solid fa-calendar-days text-emerald-400"></i>
+                            <h3 class="text-sm font-bold text-slate-200">납기 기준 미출품 스케줄 캘린더</h3>
+                        </div>
+                        
+                        <!-- 연월 이동 조작기 및 한달 분석 토글 -->
+                        <div class="flex items-center gap-2 self-end">
+                            <div class="flex items-center bg-slate-950 border border-slate-850 p-1 rounded-xl">
+                                <button onclick="navigateMonth(-1)" class="p-1.5 hover:bg-slate-800 text-slate-400 hover:text-white rounded-lg text-xs transition"><i class="fa-solid fa-chevron-left"></i></button>
+                                <span id="calendar-year-month" class="text-xs font-bold text-slate-300 px-3 min-w-[90px] text-center">2026년 05월</span>
+                                <button onclick="navigateMonth(1)" class="p-1.5 hover:bg-slate-800 text-slate-400 hover:text-white rounded-lg text-xs transition"><i class="fa-solid fa-chevron-right"></i></button>
+                            </div>
+                            <button onclick="selectEntireMonth()" class="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl shadow-md shadow-emerald-500/10 transition flex items-center gap-1.5">
+                                <i class="fa-regular fa-calendar-check"></i> 이달 전체 분석
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- 캘린더 그리드 바디 -->
+                    <div class="border border-slate-800 rounded-2xl bg-slate-950/40 p-3 overflow-hidden">
+                        <!-- 요일 헤더 -->
+                        <div class="grid grid-cols-7 gap-1 text-center text-[10px] font-bold text-slate-500 border-b border-slate-850 pb-2 mb-2">
+                            <div class="text-rose-400">일</div>
+                            <div>월</div>
+                            <div>화</div>
+                            <div>수</div>
+                            <div>목</div>
+                            <div>금</div>
+                            <div class="text-blue-400">토</div>
+                        </div>
+                        
+                        <!-- 실제 날짜 블록 그리드 -->
+                        <div id="calendar-days-grid" class="grid grid-cols-7 gap-1.5 min-h-[280px]">
+                            <!-- JS에서 가동 일자 수에 맞춰 주입됨 -->
+                        </div>
+                    </div>
+
+                    <p class="text-[11px] text-slate-500"><i class="fa-solid fa-circle-info text-emerald-500"></i> 캘린더 일자에 표시되는 숫자는 해당일에 납기가 마감되나 미출하 상태인 <b>[총 미출하 잔량]</b>입니다. 날짜를 누르거나 상단 <b>[이달 전체 분석]</b>을 누르시면 세부 데이터를 한 번에 정리해 드립니다.</p>
+                </div>
+
+                <!-- 우측: 일자별 지정 상세 목록 뷰어 (lg:5) -->
+                <div class="lg:col-span-5 bg-slate-900 border border-slate-800 rounded-3xl p-5 shadow-xl flex flex-col justify-between min-h-[440px]">
+                    <div class="space-y-4">
+                        <div class="flex justify-between items-center border-b border-slate-800 pb-3">
+                            <div class="flex items-center gap-2">
+                                <i class="fa-solid fa-clipboard-list text-emerald-400"></i>
+                                <h3 id="selected-date-title" class="text-sm font-bold text-slate-200">선택한 날짜 세부 내역</h3>
+                            </div>
+                            <span id="selected-date-count" class="text-[10px] bg-emerald-600/10 text-emerald-400 border border-emerald-500/20 px-2 py-1 rounded font-bold">0건의 데이터</span>
+                        </div>
+
+                        <!-- 월간 통계 요약 위젯 (월 단위 조회 시 표시) -->
+                        <div id="monthly-summary-widget" class="hidden bg-slate-950 p-4 rounded-2xl border border-slate-850 space-y-3">
+                            <h4 class="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                                <i class="fa-solid fa-chart-pie text-emerald-400"></i> 이달의 실적 분석 보고서
+                            </h4>
+                            <div class="grid grid-cols-3 gap-2 text-center">
+                                <div class="bg-slate-900/60 p-2 rounded-lg border border-slate-800">
+                                    <span class="text-[9px] text-slate-500 block">총 납기예정</span>
+                                    <span id="month-stat-total" class="text-xs font-extrabold text-slate-200">0건</span>
+                                </div>
+                                <div class="bg-slate-900/60 p-2 rounded-lg border border-slate-800">
+                                    <span class="text-[9px] text-amber-500 block">미출하 잔수</span>
+                                    <span id="month-stat-unfulfilled" class="text-xs font-extrabold text-amber-400">0건</span>
+                                </div>
+                                <div class="bg-slate-900/60 p-2 rounded-lg border border-slate-800">
+                                    <span class="text-[9px] text-rose-500 block">납기 지연</span>
+                                    <span id="month-stat-overdue" class="text-xs font-extrabold text-rose-500">0건</span>
+                                </div>
+                            </div>
+                            <div class="flex justify-between items-center bg-slate-900/80 p-2.5 rounded-xl border border-slate-800 text-xs">
+                                <span class="text-slate-400">이달의 납기준수율 (OTD):</span>
+                                <span id="month-stat-otd" class="font-extrabold text-emerald-400">0%</span>
+                            </div>
+                        </div>
+
+                        <!-- 선택 일자 상세 리포트 스크롤 컨테이너 -->
+                        <div id="selected-details-container" class="space-y-3 max-h-[320px] overflow-y-auto custom-scrollbar pr-1">
+                            <!-- 초기 바인딩 전 상태 메세지 -->
+                            <div class="text-center py-12 text-slate-500 text-xs">
+                                <i class="fa-regular fa-hand-pointer text-lg mb-2"></i><br>
+                                캘린더에서 미출하 물량이 기록된 일자를 선택해 보세요.
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 엑셀 익스포트 제어군 -->
+                    <button onclick="exportSelectedDateData()" id="btn-export-selected" class="w-full mt-4 bg-slate-950 hover:bg-slate-800 border border-slate-850 py-2.5 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition text-slate-300">
+                        <i class="fa-solid fa-file-export text-emerald-400"></i> <span id="btn-export-text">이 일자 상세자료 엑셀 다운로드</span>
+                    </button>
+                </div>
+
+            </div>
+
+            <!-- 하단 전체 마스터 테이블 일람 및 납기지연 필터 -->
+            <div class="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-4">
+                <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-slate-800 pb-4">
+                    <div>
+                        <h3 class="text-base font-bold text-slate-200 flex items-center gap-2">
+                            <i class="fa-solid fa-list-check text-emerald-400"></i> 미출하 상태 및 납품 분석 마스터 테이블
+                        </h3>
+                        <p class="text-xs text-slate-500 mt-1">지정한 기준일 시점을 토대로 미납품 수량과 잔존 납기 지연 기간을 정밀 연산 및 판정합니다.</p>
+                    </div>
+
+                    <!-- 필터 및 제어 도구군 -->
+                    <div class="flex flex-wrap items-center gap-3 w-full md:w-auto">
+                        <!-- 검색 인풋 -->
+                        <div class="relative flex-grow md:flex-grow-0">
+                            <input type="text" id="table-search" oninput="filterTableData()" placeholder="검색 (품목, 거래처...)" class="w-full md:w-56 bg-slate-950 border border-slate-800 focus:border-emerald-500 text-slate-300 text-xs rounded-xl pl-8 pr-3 py-2.5 outline-none transition">
+                            <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-xs"></i>
+                        </div>
+                        
+                        <!-- 미출하 및 지연전용 초점 토글 -->
+                        <select id="filter-status" onchange="filterTableData()" class="bg-slate-950 border border-slate-800 text-slate-300 text-xs rounded-xl px-3 py-2.5 outline-none focus:border-emerald-500 transition">
+                            <option value="all">전체 상태 조회</option>
+                            <option value="unfulfilled">미출하 주문 목록</option>
+                            <option value="overdue-only" class="text-rose-400 font-bold">⚠️ 납기 지연 목록만 보기</option>
+                            <option value="completed">출하 완료 목록</option>
+                        </select>
+
+                        <button onclick="exportProcessedData()" class="px-4 py-2.5 bg-emerald-600/10 hover:bg-emerald-600/20 text-emerald-400 text-xs font-bold rounded-xl border border-emerald-500/20 transition flex items-center gap-1.5 shadow-md shadow-emerald-500/5">
+                            <i class="fa-solid fa-file-export"></i> 분석 결과 내보내기
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 테이블 본문 레코드 -->
+                <div class="overflow-x-auto custom-scrollbar border border-slate-800 rounded-2xl bg-slate-950/20">
+                    <table class="w-full text-left text-xs min-w-[950px]">
+                        <thead class="bg-slate-950/80 text-slate-400 border-b border-slate-800">
+                            <tr>
+                                <th class="py-3 px-4 font-semibold text-center w-12">순번</th>
+                                <th class="py-3 px-4 font-semibold">주문번호</th>
+                                <th class="py-3 px-4 font-semibold">거래처명</th>
+                                <th class="py-3 px-4 font-semibold">품목명</th>
+                                <th class="py-3 px-4 font-semibold text-right">수량</th>
+                                <th class="py-3 px-4 font-semibold text-right">잔량</th>
+                                <th class="py-3 px-4 font-semibold">납기일</th>
+                                <th class="py-3 px-4 font-semibold">출하일</th>
+                                <th class="py-3 px-4 font-semibold text-right">지연일수</th>
+                                <th class="py-3 px-4 font-semibold text-center">최종 상태</th>
+                            </tr>
+                        </thead>
+                        <tbody id="analysis-tbody" class="divide-y divide-slate-850 bg-slate-900/40">
+                            <!-- 데이터 파싱 시 주입 -->
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- 테이블 페이징 네비게이션 제어 -->
+                <div class="flex justify-between items-center text-xs text-slate-400 pt-2">
+                    <span id="table-pagination-info">데이터를 업로드해 분석을 진행해 주세요.</span>
+                    <div class="flex items-center gap-1.5">
+                        <button onclick="prevPage()" id="btn-prev-page" class="p-2 bg-slate-950 border border-slate-800 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white disabled:opacity-30 disabled:pointer-events-none transition"><i class="fa-solid fa-chevron-left"></i> 이전</button>
+                        <button onclick="nextPage()" id="btn-next-page" class="p-2 bg-slate-950 border border-slate-800 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white disabled:opacity-30 disabled:pointer-events-none transition">다음 <i class="fa-solid fa-chevron-right"></i></button>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+    </main>
+
+    <!-- 푸터 가이드라인 -->
+    <footer class="w-full bg-slate-950 border-t border-slate-900 py-6 px-6 mt-12 text-[11px] text-slate-500">
+        <div class="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
+            <p>&copy; 2026 ORDER CALENDAR & OTD SYSTEMS. 본 분석 엔진은 로컬 브라우저 샌드박스 내부에서 안전하게 실행되므로 영업 기밀 주문 정보가 절대 외부 서버로 전송되지 않습니다.</p>
+            <div class="flex gap-4">
+                <a href="#" class="hover:text-emerald-500 transition">이용약관</a>
+                <a href="#" class="hover:text-emerald-500 transition">보안안내</a>
+            </div>
+        </div>
+    </footer>
+
+    <!-- 알림 경고 토스트 팝업 컴포넌트 -->
+    <div id="toast" class="fixed bottom-6 left-1/2 -translate-x-1/2 bg-slate-900 border border-slate-850 text-white text-xs font-semibold px-4 py-3.5 rounded-2xl shadow-2xl flex items-center gap-2.5 transform translate-y-24 opacity-0 transition-all duration-300 z-50">
+        <i class="fa-solid fa-circle-check text-emerald-400" id="toast-icon"></i>
+        <span id="toast-message">분석이 완벽히 적용되었습니다.</span>
+    </div>
+
+    <script>
+        // 전역 핵심 데이터 상태 정의
+        let parsedRawData = null; // 원본 원시 데이터
+        let processedOrders = []; // 가공 연산이 끝난 마스터 주문 데이터 집합
+        let filteredOrders = []; // 필터링을 거친 상태 집합
+        
+        // 기준 일자 및 캘린더 연월 관리
+        let targetCriteriaDate = "2025-11-20"; // 디폴트 가상 기준 날짜 (사용자 실제 주문서 251100 근방)
+        let calendarYear = 2025;
+        let calendarMonth = 11; // 1~12 형식
+        let selectedDateStr = null; // 사용자가 캘린더에서 현재 클릭해서 보고 있는 날짜 스트링 ("YYYY-MM-DD")
+        let isViewByMonth = false;  // 현재 월 단위 전체 조회 모드인지 여부
+
+        // 페이징 제어
+        let currentPage = 1;
+        const rowsPerPage = 12;
+
+        // 드래그앤드롭 이벤트 바인딩 바인드
+        const dropzone = document.getElementById('dropzone');
+        const fileInput = document.getElementById('file-input');
+
+        dropzone.addEventListener('click', () => fileInput.click());
+        dropzone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropzone.classList.add('border-emerald-500', 'bg-emerald-500/5');
+        });
+        dropzone.addEventListener('dragleave', () => {
+            dropzone.classList.remove('border-emerald-500', 'bg-emerald-500/5');
+        });
+        dropzone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropzone.classList.remove('border-emerald-500', 'bg-emerald-500/5');
+            if (e.dataTransfer.files.length > 0) {
+                parseExcelFile(e.dataTransfer.files[0]);
+            }
+        });
+
+        // 초기 시작 일시를 오늘 및 파일 특성 기준일로 세팅
+        window.onload = function() {
+            // 디폴트 기준일을 실제 주문서 데이터(2025년 11월)가 밀집한 일자인 2025-11-20일로 사전에 맞춤 설정
+            document.getElementById('target-criteria-date').value = targetCriteriaDate;
+            const criteriaDateObj = new Date(targetCriteriaDate);
+            calendarYear = criteriaDateObj.getFullYear();
+            calendarMonth = criteriaDateObj.getMonth() + 1;
+        }
+
+        // 파일 첨부 시 리스너 핸들러
+        function handleFileSelect(event) {
+            if (event.target.files.length > 0) {
+                parseExcelFile(event.target.files[0]);
+            }
+        }
+
+        // SheetJS 기반 업로드 파일 파싱 수행
+        function parseExcelFile(file) {
+            const reader = new FileReader();
+            reader.onload = function (e) {
+                try {
+                    let jsonResult = [];
+                    const filename = file.name.toLowerCase();
+
+                    if (filename.endsWith('.csv')) {
+                        // CSV 텍스트 다이렉트 디코딩 처리 (EUC-KR 또는 UTF-8)
+                        const text = new TextDecoder("utf-8").decode(new Uint8Array(e.target.result));
+                        const workbook = XLSX.read(text, { type: 'string' });
+                        const firstSheetName = workbook.SheetNames[0];
+                        const worksheet = workbook.Sheets[firstSheetName];
+                        jsonResult = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
+                    } else {
+                        // 일반 엑셀 파일 로드
+                        const data = new Uint8Array(e.target.result);
+                        const workbook = XLSX.read(data, { type: 'array', cellDates: true });
+                        const firstSheetName = workbook.SheetNames[0];
+                        const worksheet = workbook.Sheets[firstSheetName];
+                        jsonResult = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
+                    }
+                    
+                    if (jsonResult.length === 0) {
+                        showToast("선택한 엑셀 파일 내부에 유효 데이터가 없습니다.", "error");
+                        return;
+                    }
+
+                    parsedRawData = jsonResult;
+                    displayFileInfo(file.name, jsonResult.length);
+                    
+                    // 파일 자동 로드 시 기준 연월 데이터 유도 (가장 최신의 주문서 날짜 검색)
+                    autoDetectBestCriteriaDate(jsonResult);
+                    runOTDProcessing();
+                    showToast("엑셀 파일 파싱 완료 및 캘린더 자동 분석 성공!", "success");
+                    
+                } catch (error) {
+                    console.error(error);
+                    showToast("파일 파싱에 실패했습니다. 올바른 포맷인지 확인해 주세요.", "error");
+                }
+            };
+            
+            if (file.name.toLowerCase().endsWith('.csv')) {
+                reader.readAsArrayBuffer(file);
+            } else {
+                reader.readAsArrayBuffer(file);
+            }
+        }
+
+        // 파일 정보 표시 업데이트
+        function displayFileInfo(name, rowCount) {
+            document.getElementById('file-info-bar').classList.remove('hidden');
+            document.getElementById('loaded-file-name').textContent = name;
+            document.getElementById('loaded-file-rows').textContent = `(${rowCount}개 행 발견됨)`;
+        }
+
+        // 데이터 초기화
+        function resetFile() {
+            parsedRawData = null;
+            processedOrders = [];
+            filteredOrders = [];
+            fileInput.value = "";
+            document.getElementById('file-info-bar').classList.add('hidden');
+            document.getElementById('dashboard-container').classList.add('hidden');
+            showToast("선택된 데이터가 소거되었습니다.", "success");
+        }
+
+        // 업로드된 데이터 내 납기일을 분석해 최적의 기준일 및 캘린더 보기 자동 세팅
+        function autoDetectBestCriteriaDate(rows) {
+            let sampleDates = [];
+            rows.forEach(r => {
+                const dateVal = r["납기일"] || r["요구일"] || r["주문일"];
+                if (dateVal) {
+                    const parsed = parseCustomDate(dateVal);
+                    if (parsed) sampleDates.push(parsed);
+                }
+            });
+
+            if (sampleDates.length > 0) {
+                // 가장 중간 혹은 최근의 날짜를 기준일로 채택
+                sampleDates.sort((a, b) => b.getTime() - a.getTime());
+                const medianDate = sampleDates[Math.floor(sampleDates.length / 2)];
+                targetCriteriaDate = medianDate.toISOString().split('T')[0];
+                document.getElementById('target-criteria-date').value = targetCriteriaDate;
+                calendarYear = medianDate.getFullYear();
+                calendarMonth = medianDate.getMonth() + 1;
+            }
+        }
+
+        // 다양한 형식의 날짜 스트링/숫자를 파싱하는 로직
+        function parseCustomDate(val) {
+            if (!val) return null;
+            if (val instanceof Date) return val;
+
+            const strVal = String(val).replace(/[^0-9]/g, "").trim();
+            
+            // 20251128 형식
+            if (strVal.length === 8) {
+                const y = parseInt(strVal.substring(0, 4));
+                const m = parseInt(strVal.substring(4, 6)) - 1;
+                const d = parseInt(strVal.substring(6, 8));
+                return new Date(y, m, d);
+            }
+            
+            // 251128 형식
+            if (strVal.length === 6) {
+                const y = parseInt("20" + strVal.substring(0, 2));
+                const m = parseInt(strVal.substring(2, 4)) - 1;
+                const d = parseInt(strVal.substring(4, 6));
+                return new Date(y, m, d);
+            }
+
+            // 기존 일반 날짜 검출 포맷 시도
+            const parsedMs = Date.parse(val);
+            if (!isNaN(parsedMs)) {
+                return new Date(parsedMs);
+            }
+
+            return null;
+        }
+
+        // 지정 기준일 날짜 인풋 변경 리스너
+        function onCriteriaDateChange() {
+            const dateVal = document.getElementById('target-criteria-date').value;
+            if (dateVal) {
+                targetCriteriaDate = dateVal;
+                const dateObj = new Date(targetCriteriaDate);
+                calendarYear = dateObj.getFullYear();
+                calendarMonth = dateObj.getMonth() + 1;
+                
+                if (parsedRawData) {
+                    runOTDProcessing();
+                    showToast(`기준일이 ${targetCriteriaDate}로 변경 및 재생성되었습니다.`, "success");
+                }
+            }
+        }
+
+        // 로드된 주문서를 실시간 연산 및 캘린더 분석 처리
+        function runOTDProcessing() {
+            if (!parsedRawData) {
+                showToast("분석할 엑셀/CSV 데이터를 먼저 선택하거나 불러오세요.", "error");
+                return;
+            }
+
+            const criteriaDateObj = new Date(targetCriteriaDate);
+            const criteriaZero = new Date(criteriaDateObj.getFullYear(), criteriaDateObj.getMonth(), criteriaDateObj.getDate());
+
+            processedOrders = [];
+
+            parsedRawData.forEach((row, idx) => {
+                // 실제 주문서 칼럼 매핑
+                const orderId = row["주문번호"] || row["주문서번호"] || `ORD-${100000 + idx}`;
+                const vendorName = row["거래처명"] || row["거래처"] || "미지정 거래처";
+                const itemName = row["품목명"] || row["품목"] || "미지정 자재명";
+                
+                const qty = parseFloat(row["수량"]) || 0;
+                let balance = parseFloat(row["잔량"]);
+                if (isNaN(balance)) {
+                    balance = qty; // 잔량 컬럼이 없으면 수량을 잔량으로 판단
+                }
+                
+                // 마이너스 잔량은 정밀성 보정을 위해 0으로 일률 처리
+                if (balance < 0) balance = 0;
+
+                const rawDueDate = row["납기일"] || row["요구일"];
+                const rawShipDate = row["출하일"] || row["최종출하일"];
+
+                const dueDateObj = parseCustomDate(rawDueDate);
+                const shipDateObj = parseCustomDate(rawShipDate);
+
+                let status = "completed"; // 디폴트 출하완료
+                let delayDays = 0;
+
+                // 잔량이 남아있는 경우 = 미출하
+                const isUnfulfilled = balance > 0;
+
+                if (dueDateObj) {
+                    const dueZero = new Date(dueDateObj.getFullYear(), dueDateObj.getMonth(), dueDateObj.getDate());
+                    
+                    if (isUnfulfilled) {
+                        status = "unfulfilled";
+                        
+                        // 지정한 가상 기준일이 납기일보다 지났다면 '납기 지연'으로 긴급 판정
+                        if (criteriaZero.getTime() > dueZero.getTime()) {
+                            status = "overdue"; // 납기지연 상태 전환
+                            const diffTime = criteriaZero.getTime() - dueZero.getTime();
+                            delayDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                        }
+                    } else {
+                        // 출하 완료인 상태에서의 지연일 분석
+                        status = "completed";
+                        if (shipDateObj) {
+                            const shipZero = new Date(shipDateObj.getFullYear(), shipDateObj.getMonth(), shipDateObj.getDate());
+                            if (shipZero.getTime() > dueZero.getTime()) {
+                                const diffTime = shipZero.getTime() - dueZero.getTime();
+                                delayDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                            }
+                        }
+                    }
+                }
+
+                processedOrders.push({
+                    index: idx + 1,
+                    orderId: String(orderId),
+                    vendor: String(vendorName),
+                    item: String(itemName),
+                    qty: qty,
+                    balance: balance,
+                    dueDateStr: dueDateObj ? dueDateObj.toISOString().split('T')[0] : "포맷확인",
+                    shipDateStr: shipDateObj ? shipDateObj.toISOString().split('T')[0] : "미출하",
+                    dueDateObj: dueDateObj,
+                    delayDays: delayDays,
+                    status: status // 'completed', 'unfulfilled', 'overdue'
+                });
+            });
+
+            // 필터 목록 동기화
+            filteredOrders = [...processedOrders];
+            currentPage = 1;
+
+            // 대시보드 블록 활성화
+            document.getElementById('dashboard-container').classList.remove('hidden');
+
+            // 통계 가시화 카드 및 캘린더 생성
+            updateStatisticsBadges();
+            renderCalendarLayout();
+            filterTableData();
+
+            // 최초 화면 렌더링 시에는 해당 기준 달의 월별 전체 보기 상태로 기본 진입시킵니다.
+            selectEntireMonth();
+        }
+
+        // 대시보드 상단 4대 핵심 뱃지 데이터 업데이트
+        function updateStatisticsBadges() {
+            const total = processedOrders.length;
+            const completed = processedOrders.filter(o => o.status === 'completed').length;
+            const unfulfilled = processedOrders.filter(o => o.balance > 0).length;
+            const overdue = processedOrders.filter(o => o.status === 'overdue').length;
+
+            document.getElementById('stat-total-orders').textContent = `${total.toLocaleString()}건`;
+            document.getElementById('stat-completed-orders').textContent = `${completed.toLocaleString()}건`;
+            document.getElementById('stat-unfulfilled-orders').textContent = `${unfulfilled.toLocaleString()}건`;
+            document.getElementById('stat-overdue-orders').textContent = `${overdue.toLocaleString()}건`;
+
+            // 가로바 퀵 서머리 요약 데이터 연계
+            const totalUnfulfilledQty = processedOrders.reduce((sum, curr) => sum + curr.balance, 0);
+            document.getElementById('quick-unfulfilled-qty').textContent = `${totalUnfulfilledQty.toLocaleString()} EA`;
+            document.getElementById('quick-overdue-count').textContent = `${overdue} 건`;
+        }
+
+        // 미출하 캘린더 생성 로직
+        function renderCalendarLayout() {
+            const daysGrid = document.getElementById('calendar-days-grid');
+            daysGrid.innerHTML = "";
+
+            // 월 텍스트 표시 설정
+            document.getElementById('calendar-year-month').textContent = `${calendarYear}년 ${String(calendarMonth).padStart(2, '0')}월`;
+
+            // 이번 달의 1일 날짜 객체 생성
+            const firstDayOfMon = new Date(calendarYear, calendarMonth - 1, 1);
+            const startDayOfWeek = firstDayOfMon.getDay(); // 시작 요일 (0: 일요일 ~ 6: 토요일)
+            
+            // 이번 달의 마지막 날 구하기
+            const lastDayOfMon = new Date(calendarYear, calendarMonth, 0).getDate();
+
+            // 이전 달의 채움 영역 계산
+            for (let i = 0; i < startDayOfWeek; i++) {
+                const emptyCell = document.createElement('div');
+                emptyCell.className = "p-2 bg-slate-950/20 text-slate-700 text-xs text-left rounded-lg min-h-[50px] opacity-30";
+                daysGrid.appendChild(emptyCell);
+            }
+
+            // 이번 달 실존하는 날짜 배치 루프
+            for (let d = 1; d <= lastDayOfMon; d++) {
+                const dateKey = `${calendarYear}-${String(calendarMonth).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+                
+                // 해당 일자가 납기예정일이며 잔량(미출하)이 남아있는 항목 필터링
+                const matchingUnfulfilledOrders = processedOrders.filter(o => o.dueDateStr === dateKey && o.balance > 0);
+                const sumUnfulfilledQty = matchingUnfulfilledOrders.reduce((sum, curr) => sum + curr.balance, 0);
+
+                const dayCell = document.createElement('div');
+                dayCell.id = `cal-day-${dateKey}`;
+                dayCell.onclick = () => selectCalendarDate(dateKey);
+                
+                // 일요일/토요일 색상 분리 및 기본 마크업 구성
+                const dateObj = new Date(calendarYear, calendarMonth - 1, d);
+                const dayOfWeek = dateObj.getDay();
+                let dayNumColor = "text-slate-400";
+                if (dayOfWeek === 0) dayNumColor = "text-rose-500 font-bold";
+                else if (dayOfWeek === 6) dayNumColor = "text-blue-400 font-bold";
+
+                // 오늘 기준일 표시 보정
+                const isCriteriaDate = (dateKey === targetCriteriaDate);
+                const activeDayClass = isCriteriaDate ? "border-2 border-emerald-500 bg-emerald-950/20" : "bg-slate-900 hover:bg-slate-850";
+
+                dayCell.className = `p-2 ${activeDayClass} border border-slate-800/60 rounded-xl text-left cursor-pointer transition min-h-[64px] flex flex-col justify-between relative`;
+                
+                let quantityBadge = "";
+                if (sumUnfulfilledQty > 0) {
+                    quantityBadge = `
+                        <div class="mt-1 text-[10px] font-black text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20 truncate text-right">
+                            ${sumUnfulfilledQty.toLocaleString()} EA
+                        </div>
+                    `;
+                }
+
+                dayCell.innerHTML = `
+                    <div class="flex justify-between items-center">
+                        <span class="text-xs font-bold ${dayNumColor}">${d}</span>
+                        ${matchingUnfulfilledOrders.length > 0 ? `<span class="w-1.5 h-1.5 rounded-full bg-amber-500" title="${matchingUnfulfilledOrders.length}건 대기"></span>` : ''}
+                    </div>
+                    ${quantityBadge}
+                `;
+
+                daysGrid.appendChild(dayCell);
+            }
+        }
+
+        // 캘린더 연월 조작 네비게이션
+        function navigateMonth(direction) {
+            calendarMonth += direction;
+            if (calendarMonth < 1) {
+                calendarMonth = 12;
+                calendarYear--;
+            } else if (calendarMonth > 12) {
+                calendarMonth = 1;
+                calendarYear++;
+            }
+            renderCalendarLayout();
+            
+            // 월간 이동이 발생하면 자연스럽게 해당 월 전체 보기로 리셋 세팅
+            selectEntireMonth();
+        }
+
+        // 캘린더에서 한달 전체 분석을 눌렀을 때의 통합 처리 로직
+        function selectEntireMonth() {
+            isViewByMonth = true;
+            selectedDateStr = null; // 개별 날짜 선택 해제
+
+            // 모든 캘린더 일자의 강조 링 스타일 해제
+            document.querySelectorAll("[id^='cal-day-']").forEach(el => {
+                el.classList.remove('ring-2', 'ring-emerald-500', 'ring-offset-2', 'ring-offset-slate-900');
+            });
+
+            const detailsContainer = document.getElementById('selected-details-container');
+            detailsContainer.innerHTML = "";
+
+            // 헤더 정보 및 버튼 텍스트 변경
+            document.getElementById('selected-date-title').innerHTML = `<i class="fa-solid fa-chart-line text-emerald-400 mr-1.5"></i>${calendarYear}년 ${calendarMonth}월 전체 분석`;
+            document.getElementById('btn-export-text').textContent = `${calendarYear}년 ${calendarMonth}월 월간 전체자료 다운로드`;
+
+            // 선택 월 위젯 노출
+            const widget = document.getElementById('monthly-summary-widget');
+            widget.classList.remove('hidden');
+
+            // 해당 월에 마감되는 전체 주문 데이터 가공
+            const currentMonthList = processedOrders.filter(o => {
+                if (!o.dueDateObj) return false;
+                return o.dueDateObj.getFullYear() === calendarYear && (o.dueDateObj.getMonth() + 1) === calendarMonth;
+            });
+
+            const totalCount = currentMonthList.length;
+            const unfulfilledList = currentMonthList.filter(o => o.balance > 0);
+            const overdueList = currentMonthList.filter(o => o.status === 'overdue');
+            
+            // 월간 OTD 준수율 계산 (지연되지 않고 무사히 제때 납품 완료된 비율)
+            const completedOnTime = currentMonthList.filter(o => o.status === 'completed' && o.delayDays === 0).length;
+            const otdRate = totalCount > 0 ? Math.round((completedOnTime / totalCount) * 100) : 100;
+
+            // 통계 숫자 주입
+            document.getElementById('selected-date-count').textContent = `월간 총 ${totalCount}건`;
+            document.getElementById('month-stat-total').textContent = `${totalCount}건`;
+            document.getElementById('month-stat-unfulfilled').textContent = `${unfulfilledList.length}건`;
+            document.getElementById('month-stat-overdue').textContent = `${overdueList.length}건`;
+            document.getElementById('month-stat-otd').textContent = `${otdRate}%`;
+
+            if (totalCount === 0) {
+                detailsContainer.innerHTML = `
+                    <div class="text-center py-16 text-slate-500 text-xs">
+                        <i class="fa-regular fa-calendar-xmark text-2xl mb-2 text-slate-600"></i><br>
+                        이 달에 예정된 납기 일정이 존재하지 않습니다.
+                    </div>
+                `;
+                return;
+            }
+
+            // 미출하(지연 포함) 목록 먼저 상위 노출
+            const sortedList = [...currentMonthList].sort((a, b) => {
+                if (a.balance > 0 && b.balance === 0) return -1;
+                if (a.balance === 0 && b.balance > 0) return 1;
+                return 0;
+            });
+
+            sortedList.forEach(item => {
+                let statusBadge = "";
+                let itemCardColor = "border-slate-800 bg-slate-950/40";
+                
+                if (item.status === "completed") {
+                    statusBadge = `<span class="px-2 py-0.5 bg-emerald-500/10 text-emerald-400 text-[9px] rounded font-bold">출하완료</span>`;
+                } else if (item.status === "overdue") {
+                    statusBadge = `<span class="px-2 py-0.5 bg-rose-500/10 text-rose-400 text-[9px] rounded font-bold flex items-center gap-1">⚠️ 납기지연 (${item.delayDays}일)</span>`;
+                    itemCardColor = "border-rose-900/40 bg-rose-950/10";
+                } else {
+                    statusBadge = `<span class="px-2 py-0.5 bg-amber-500/10 text-amber-400 text-[9px] rounded font-bold">미출하 (대기)</span>`;
+                    itemCardColor = "border-amber-900/40 bg-amber-950/10";
+                }
+
+                detailsContainer.innerHTML += `
+                    <div class="p-3 border rounded-xl ${itemCardColor} space-y-2 transition-all hover:scale-[1.01]">
+                        <div class="flex justify-between items-start">
+                            <div>
+                                <span class="text-[9px] text-slate-500 font-bold block">${item.dueDateStr} | ${item.orderId}</span>
+                                <span class="text-xs font-black text-slate-200">${item.vendor}</span>
+                            </div>
+                            ${statusBadge}
+                        </div>
+                        <div class="text-xs bg-slate-900/80 p-2 rounded border border-slate-800 space-y-1">
+                            <div class="text-[11px] text-slate-400 font-semibold truncate"><i class="fa-solid fa-box text-slate-600 mr-1.5"></i>${item.item}</div>
+                            <div class="flex justify-between items-center text-[10px] text-slate-500 pt-1 border-t border-slate-850">
+                                <span>주문량: ${item.qty.toLocaleString()} EA</span>
+                                <span class="font-bold text-amber-400">잔량: <span class="text-xs font-black">${item.balance.toLocaleString()}</span> EA</span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+        }
+
+        // 캘린더 개별 날짜 클릭 시 우측의 해당 일자 세부 미출하 거래처/품목 리포트 갱신
+        function selectCalendarDate(dateStr) {
+            isViewByMonth = false;
+            selectedDateStr = dateStr;
+            highlightActiveDay(dateStr);
+
+            // 월간 통계 위젯 숨기기
+            document.getElementById('monthly-summary-widget').classList.add('hidden');
+            document.getElementById('btn-export-text').textContent = "이 일자 상세자료 엑셀 다운로드";
+
+            const detailsContainer = document.getElementById('selected-details-container');
+            detailsContainer.innerHTML = "";
+
+            const targetDateObj = new Date(dateStr);
+            const formattedKoreanDate = `${targetDateObj.getFullYear()}년 ${targetDateObj.getMonth() + 1}월 ${targetDateObj.getDate()}일`;
+            document.getElementById('selected-date-title').innerHTML = `<i class="fa-solid fa-calendar-day text-emerald-400 mr-1.5"></i>${formattedKoreanDate} 납기 예정 목록`;
+
+            // 해당일자 납기인 주문들 정렬 추출 (미출하 우선)
+            const matchedList = processedOrders.filter(o => o.dueDateStr === dateStr);
+            document.getElementById('selected-date-count').textContent = `${matchedList.length}건 매칭됨`;
+
+            if (matchedList.length === 0) {
+                detailsContainer.innerHTML = `
+                    <div class="text-center py-16 text-slate-500 text-xs">
+                        <i class="fa-regular fa-calendar text-2xl mb-2 text-slate-600"></i><br>
+                        해당 날짜에 납기 약속된 수주 내역이 전혀 존재하지 않습니다.
+                    </div>
+                `;
+                return;
+            }
+
+            matchedList.forEach(item => {
+                let statusBadge = "";
+                let itemCardColor = "border-slate-800 bg-slate-950/40";
+                
+                if (item.status === "completed") {
+                    statusBadge = `<span class="px-2 py-0.5 bg-emerald-500/10 text-emerald-400 text-[9px] rounded font-bold">출하완료</span>`;
+                } else if (item.status === "overdue") {
+                    statusBadge = `<span class="px-2 py-0.5 bg-rose-500/10 text-rose-400 text-[9px] rounded font-bold flex items-center gap-1">⚠️ 납기지연 (${item.delayDays}일)</span>`;
+                    itemCardColor = "border-rose-900/40 bg-rose-950/10";
+                } else {
+                    statusBadge = `<span class="px-2 py-0.5 bg-amber-500/10 text-amber-400 text-[9px] rounded font-bold">미출하 (잔량 대기)</span>`;
+                    itemCardColor = "border-amber-900/40 bg-amber-950/10";
+                }
+
+                detailsContainer.innerHTML += `
+                    <div class="p-3 border rounded-xl ${itemCardColor} space-y-2 transition-all hover:scale-[1.01]">
+                        <div class="flex justify-between items-start">
+                            <div>
+                                <span class="text-[9px] text-slate-500 font-bold block">${item.orderId}</span>
+                                <span class="text-xs font-black text-slate-200">${item.vendor}</span>
+                            </div>
+                            ${statusBadge}
+                        </div>
+                        <div class="text-xs bg-slate-900/80 p-2 rounded border border-slate-800 space-y-1">
+                            <div class="text-[11px] text-slate-400 font-semibold truncate"><i class="fa-solid fa-box text-slate-600 mr-1.5"></i>${item.item}</div>
+                            <div class="flex justify-between items-center text-[10px] text-slate-500 pt-1 border-t border-slate-850">
+                                <span>주문량: ${item.qty.toLocaleString()} EA</span>
+                                <span class="font-bold text-amber-400">잔량: <span class="text-xs font-black">${item.balance.toLocaleString()}</span> EA</span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+        }
+
+        // 선택된 날짜 블록에 테두리 효과 강조
+        function highlightActiveDay(dateStr) {
+            document.querySelectorAll("[id^='cal-day-']").forEach(el => {
+                el.classList.remove('ring-2', 'ring-emerald-500', 'ring-offset-2', 'ring-offset-slate-900');
+            });
+            const targetEl = document.getElementById(`cal-day-${dateStr}`);
+            if (targetEl) {
+                targetEl.classList.add('ring-2', 'ring-emerald-500', 'ring-offset-2', 'ring-offset-slate-900');
+            }
+        }
+
+        // 전체 테이블 다이내믹 필터링 제어
+        function filterTableData() {
+            const query = document.getElementById('table-search').value.toLowerCase();
+            const filterVal = document.getElementById('filter-status').value;
+
+            filteredOrders = processedOrders.filter(row => {
+                const matchesSearch = row.orderId.toLowerCase().includes(query) || 
+                                     row.vendor.toLowerCase().includes(query) || 
+                                     row.item.toLowerCase().includes(query);
+                
+                let matchesStatus = true;
+                if (filterVal === 'unfulfilled') {
+                    matchesStatus = (row.balance > 0);
+                } else if (filterVal === 'overdue-only') {
+                    matchesStatus = (row.status === 'overdue');
+                } else if (filterVal === 'completed') {
+                    matchesStatus = (row.status === 'completed');
+                }
+
+                return matchesSearch && matchesStatus;
+            });
+
+            currentPage = 1;
+            renderTableBody();
+        }
+
+        // 마스터 리스트 테이블 렌더러
+        function renderTableBody() {
+            const tbody = document.getElementById('analysis-tbody');
+            tbody.innerHTML = "";
+
+            const totalRows = filteredOrders.length;
+            const totalPages = Math.ceil(totalRows / rowsPerPage) || 1;
+
+            if (totalRows === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="10" class="py-12 text-center text-slate-500 font-medium bg-slate-900/10">
+                            <i class="fa-solid fa-rectangle-xmark text-2xl mb-2 text-slate-600"></i><br>
+                            조건에 부합하는 주문 내역이 리포트에 존재하지 않습니다.
+                        </td>
+                    </tr>
+                `;
+                document.getElementById('table-pagination-info').textContent = "기록이 없습니다.";
+                document.getElementById('btn-prev-page').disabled = true;
+                document.getElementById('btn-next-page').disabled = true;
+                return;
+            }
+
+            if (currentPage < 1) currentPage = 1;
+            if (currentPage > totalPages) currentPage = totalPages;
+
+            const startIndex = (currentPage - 1) * rowsPerPage;
+            const endIndex = Math.min(startIndex + rowsPerPage, totalRows);
+            const pageSlice = filteredOrders.slice(startIndex, endIndex);
+
+            pageSlice.forEach((row, viewIdx) => {
+                const tr = document.createElement('tr');
+                tr.className = "hover:bg-slate-850/40 border-b border-slate-850 text-slate-300 transition";
+
+                let statusBadge = "";
+                let delayText = "";
+
+                if (row.status === 'completed') {
+                    statusBadge = `<span class="px-2.5 py-1 bg-emerald-500/10 text-emerald-400 font-bold border border-emerald-500/10 rounded-lg text-[10px]">출하 완료</span>`;
+                    delayText = row.delayDays > 0 ? `<span class="text-rose-400 font-semibold">${row.delayDays}일 지연</span>` : `<span class="text-slate-500">-</span>`;
+                } else if (row.status === 'overdue') {
+                    statusBadge = `<span class="px-2.5 py-1 bg-rose-500/10 text-rose-400 font-bold border border-rose-500/10 rounded-lg text-[10px]">⚠️ 납기 지연</span>`;
+                    delayText = `<span class="text-rose-500 font-extrabold">+${row.delayDays}일 경과</span>`;
+                } else {
+                    statusBadge = `<span class="px-2.5 py-1 bg-amber-500/10 text-amber-400 font-bold border border-amber-500/10 rounded-lg text-[10px]">미출하 대기</span>`;
+                    delayText = `<span class="text-slate-500">진행중</span>`;
+                }
+
+                tr.innerHTML = `
+                    <td class="py-3.5 px-4 text-center font-bold text-slate-500">${startIndex + viewIdx + 1}</td>
+                    <td class="py-3.5 px-4 font-bold text-white tracking-wide">${row.orderId}</td>
+                    <td class="py-3.5 px-4 max-w-[150px] truncate" title="${row.vendor}">${row.vendor}</td>
+                    <td class="py-3.5 px-4 max-w-[180px] truncate" title="${row.item}">${row.item}</td>
+                    <td class="py-3.5 px-4 text-right font-semibold">${row.qty.toLocaleString()}</td>
+                    <td class="py-3.5 px-4 text-right font-black text-amber-400">${row.balance.toLocaleString()}</td>
+                    <td class="py-3.5 px-4 text-slate-400 font-medium">${row.dueDateStr}</td>
+                    <td class="py-3.5 px-4 text-slate-400 font-medium">${row.shipDateStr}</td>
+                    <td class="py-3.5 px-4 text-right">${delayText}</td>
+                    <td class="py-3.5 px-4 text-center">${statusBadge}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+
+            document.getElementById('table-pagination-info').textContent = `조회 결과 ${totalRows}건 중 ${startIndex + 1}-${endIndex}번째 열람중 (전체 ${totalPages}페이지)`;
+            
+            document.getElementById('btn-prev-page').disabled = (currentPage === 1);
+            document.getElementById('btn-next-page').disabled = (currentPage === totalPages);
+        }
+
+        function prevPage() {
+            if (currentPage > 1) {
+                currentPage--;
+                renderTableBody();
+            }
+        }
+
+        function nextPage() {
+            const totalPages = Math.ceil(filteredOrders.length / rowsPerPage);
+            if (currentPage < totalPages) {
+                currentPage++;
+                renderTableBody();
+            }
+        }
+
+        // 선택된 개별 날짜 또는 한달 전체 데이터를 엑셀로 한정 추출 다운로드
+        function exportSelectedDateData() {
+            let targetList = [];
+            let filename = "";
+
+            if (isViewByMonth) {
+                // 월간 모드일 때 해당 월 매핑
+                targetList = processedOrders.filter(o => {
+                    if (!o.dueDateObj) return false;
+                    return o.dueDateObj.getFullYear() === calendarYear && (o.dueDateObj.getMonth() + 1) === calendarMonth;
+                });
+                filename = `미출하_월간_종합보고서_${calendarYear}년_${calendarMonth}월.xlsx`;
+            } else {
+                // 특정 일자 모드일 때
+                if (!selectedDateStr) return;
+                targetList = processedOrders.filter(o => o.dueDateStr === selectedDateStr);
+                filename = `미출하_세부일자_보고서_${selectedDateStr}.xlsx`;
+            }
+
+            if (targetList.length === 0) {
+                showToast("다운로드할 상세 데이터가 없습니다.", "error");
+                return;
+            }
+
+            const excelRows = targetList.map(o => ({
+                "약정 납기일": o.dueDateStr,
+                "주문번호": o.orderId,
+                "거래처명": o.vendor,
+                "품목명": o.item,
+                "주문 수량": o.qty,
+                "미출하 잔량": o.balance,
+                "실제 출하일": o.shipDateStr,
+                "판정 지연일수": o.delayDays,
+                "최종상태": o.status === 'completed' ? '출하완료' : (o.status === 'overdue' ? '납기지연' : '미출하대기')
+            }));
+
+            const ws = XLSX.utils.json_to_sheet(excelRows);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "상세_납기보고서");
+            XLSX.writeFile(wb, filename);
+            showToast("선택 범위에 대한 맞춤형 엑셀 파일이 성공적으로 내려받아졌습니다.", "success");
+        }
+
+        // 정제 완료된 분석 보고서 종합 세부자료 다운로드
+        function exportProcessedData() {
+            if (processedOrders.length === 0) {
+                showToast("출력 대상 분석본이 비어 있습니다.", "error");
+                return;
+            }
+
+            const exportSheetData = processedOrders.map(row => {
+                let statusLabel = "출하완료";
+                if (row.status === 'overdue') statusLabel = "납기지연";
+                else if (row.status === 'unfulfilled') statusLabel = "미출하대기";
+
+                return {
+                    "순번": row.index,
+                    "주문번호": row.orderId,
+                    "거래처명": row.vendor,
+                    "품목명": row.item,
+                    "총주문량": row.qty,
+                    "미출하잔량": row.balance,
+                    "약정 납기일": row.dueDateStr,
+                    "최종 출하일": row.shipDateStr,
+                    "판정 지연일수": row.delayDays,
+                    "수행 결과": statusLabel
+                };
+            });
+
+            const ws = XLSX.utils.json_to_sheet(exportSheetData);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "OTD_Details");
+            
+            XLSX.writeFile(wb, `미출하_분석_최종보고서_${targetCriteriaDate}.xlsx`);
+            showToast(`기준일(${targetCriteriaDate}) 시점의 종합 마스터 보고서가 다운로드되었습니다.`, "success");
+        }
+
+        // 자체 탑재 고품질 샘플 데이터셋 연동 (251208 주문서 CSV 실제 포맷 정교 복사 구현)
+        function loadSampleCSVData() {
+            const mockRows = [
+                { "주문번호": "251013-24", "거래처명": "엘에스일렉트릭(주)CJ R&D", "품목명": "PCB ASS'Y, 3", "수량": 45, "잔량": 45, "납기일": "20251125", "출하일": "" },
+                { "주문번호": "251031-12", "거래처명": "(주)엠투아이코퍼레이션", "품목명": "TOPRX0501VD", "수량": 400, "잔량": 399, "납기일": "20251128", "출하일": "20251114" },
+                { "주문번호": "250806-01", "거래처명": "(주)엠투아이코퍼레이션", "품목명": "TOPRX0500VD", "수량": 579, "잔량": 0, "납기일": "20251110", "출하일": "20251105" },
+                { "주문번호": "251101-05", "거래처명": "삼성전기 청주공장", "품목명": "Substrate MAIN Board v4", "수량": 200, "잔량": 150, "납기일": "20251120", "출하일": "" },
+                { "주문번호": "251101-08", "거래처명": "삼성전기 청주공장", "품목명": "Substrate MAIN Board v4", "수량": 100, "잔량": 0, "납기일": "20251115", "출하일": "20251115" },
+                { "주문번호": "251102-14", "거래처명": "(주)원익IPS", "품목명": "Silicon Ring CNC", "수량": 15, "잔량": 15, "납기일": "20251120", "출하일": "" },
+                { "주문번호": "251103-02", "거래처명": "엘에스일렉트릭(주)CJ R&D", "품목명": "Core Module Case", "수량": 80, "잔량": 10, "납기일": "20251122", "출하일": "20251121" },
+                { "주문번호": "251105-22", "거래처명": "LG이노텍 청주", "품목명": "Camera Bracket Unit", "수량": 500, "잔량": 500, "납기일": "20251130", "출하일": "" },
+                { "주문번호": "251107-11", "거래처명": "에코프로비엠 오창", "품목명": "Ni-Co Secondary Battery Tray", "수량": 30, "잔량": 0, "납기일": "20251118", "출하일": "20251118" },
+                { "주문번호": "251109-04", "거래처명": "SK하이닉스 M15", "품목명": "Wafer Quartz Container", "수량": 60, "잔량": 60, "납기일": "20251119", "출하일": "" },
+                { "주문번호": "251110-01", "거래처명": "(주)심텍", "품목명": "FC-BGA Sub-Carrier", "수량": 1000, "잔량": 200, "납기일": "20251125", "출하일": "" },
+                { "주문번호": "251112-18", "거래처명": "(주)엠투아이코퍼레이션", "품목명": "TOPRX0501VD", "수량": 250, "잔량": 0, "납기일": "20251114", "출하일": "20251112" }
+            ];
+
+            parsedRawData = mockRows;
+            displayFileInfo("251208_주문서_임포트_가상셋.csv", mockRows.length);
+            
+            // 기준일 초기값 설정 (2025-11-20 시점)
+            targetCriteriaDate = "2025-11-20";
+            document.getElementById('target-criteria-date').value = targetCriteriaDate;
+            calendarYear = 2025;
+            calendarMonth = 11;
+
+            runOTDProcessing();
+            showToast("실무 패턴 가상 주문서 12건이 완벽히 시뮬레이션되었습니다.", "success");
+        }
+
+        // 토스트 팝업 제어
+        function showToast(message, type = "success") {
+            const toast = document.getElementById('toast');
+            const toastMessage = document.getElementById('toast-message');
+            const toastIcon = document.getElementById('toast-icon');
+
+            toastMessage.textContent = message;
+
+            if (type === "success") {
+                toastIcon.className = "fa-solid fa-circle-check text-emerald-400";
+            } else {
+                toastIcon.className = "fa-solid fa-circle-exclamation text-rose-500";
+            }
+
+            toast.classList.remove('translate-y-24', 'opacity-0');
+            toast.classList.add('translate-y-0', 'opacity-100');
+
+            setTimeout(() => {
+                toast.classList.remove('translate-y-0', 'opacity-100');
+                toast.classList.add('translate-y-24', 'opacity-0');
+            }, 3000);
+        }
+    </script>
+</body>
+</html>
